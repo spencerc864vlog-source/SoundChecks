@@ -52,9 +52,15 @@ async function main() {
     .values(venuesData)
     .returning();
 
+  const [fleetFoxes, tameImpala, boygenius, fredAgain] = await db
+    .insert(schema.artists)
+    .values([{ name: "Fleet Foxes" }, { name: "Tame Impala" }, { name: "boygenius" }, { name: "Fred again.." }])
+    .returning();
+
   const concertsData = [
     {
       artist: "Fleet Foxes",
+      artistId: fleetFoxes.id,
       tourName: "Shore Tour",
       venueId: radioCity.id,
       date: "2023-09-14",
@@ -62,6 +68,7 @@ async function main() {
     },
     {
       artist: "Tame Impala",
+      artistId: tameImpala.id,
       tourName: "The Slow Rush Tour",
       venueId: gorge.id,
       date: "2022-08-27",
@@ -69,6 +76,7 @@ async function main() {
     },
     {
       artist: "boygenius",
+      artistId: boygenius.id,
       tourName: "The Record Tour",
       venueId: kiaForum.id,
       date: "2023-10-20",
@@ -76,6 +84,7 @@ async function main() {
     },
     {
       artist: "Fred again..",
+      artistId: fredAgain.id,
       tourName: "Actual Life Tour",
       venueId: alexandraPalace.id,
       date: "2023-03-03",
@@ -84,6 +93,11 @@ async function main() {
   ];
 
   const concerts = await db.insert(schema.concerts).values(concertsData).returning();
+
+  await db.insert(schema.artistRatings).values([
+    { userId: alex.id, artistId: fleetFoxes.id, rating: 10, body: "Live harmonies are even better than the records." },
+    { userId: sam.id, artistId: boygenius.id, rating: 10, body: "No notes. Perfect band." },
+  ]);
 
   await db.insert(schema.venueRatings).values([
     { userId: alex.id, venueId: radioCity.id, rating: 10, body: "Best acoustics of any room I've been in." },
@@ -145,6 +159,34 @@ async function main() {
 
   await db.insert(schema.comments).values([
     { userId: sam.id, reviewId: reviews[0].id, body: "Wish I'd been there for this one." },
+  ]);
+
+  const [festivalList] = await db
+    .insert(schema.lists)
+    .values([{ userId: alex.id, title: "Best sound of 2023", description: "Rooms and rigs that got it right." }])
+    .returning();
+
+  await db.insert(schema.listItems).values([
+    { listId: festivalList.id, concertId: concerts[0].id, position: 1 },
+    { listId: festivalList.id, concertId: concerts[2].id, position: 2 },
+  ]);
+
+  await db.insert(schema.wantToGo).values([
+    {
+      userId: alex.id,
+      ticketmasterEventId: "seed-event-1",
+      eventName: "boygenius — The Record Tour",
+      eventDate: "2027-05-01",
+      venueName: "Kia Forum",
+      city: "Inglewood",
+      eventUrl: "https://www.ticketmaster.com/",
+    },
+  ]);
+
+  await db.insert(schema.notifications).values([
+    { userId: alex.id, actorId: jordan.id, type: "follow" },
+    { userId: alex.id, actorId: sam.id, type: "like", reviewId: reviews[0].id },
+    { userId: alex.id, actorId: sam.id, type: "comment", reviewId: reviews[0].id },
   ]);
 
   console.log("Done. Sample login: username 'alexr', password 'password123'.");

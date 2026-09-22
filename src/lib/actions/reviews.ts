@@ -86,6 +86,7 @@ export async function upsertReviewAction(
 }
 
 const deleteSchema = z.object({ reviewId: z.string().uuid() });
+const redirectPathSchema = z.string().startsWith("/").max(200);
 
 export async function deleteReviewAction(formData: FormData) {
   const user = await requireUser();
@@ -104,5 +105,17 @@ export async function deleteReviewAction(formData: FormData) {
   revalidatePath(`/concerts/${review.concertId}`);
   revalidatePath(`/u/${user.username}`);
   revalidatePath("/");
+
+  // Called from an inline "Delete" on a review card (feed, profile, popular
+  // reviews) — stay put and just let the revalidated data drop the card.
+  // Called from the standalone edit page with no redirectPath — that page
+  // no longer makes sense once its review is gone, so leave it.
+  const redirectPathRaw = formData.get("redirectPath");
+  const redirectPathParsed = redirectPathSchema.safeParse(redirectPathRaw);
+  if (redirectPathParsed.success) {
+    revalidatePath(redirectPathParsed.data);
+    return;
+  }
+
   redirect(`/concerts/${review.concertId}`);
 }

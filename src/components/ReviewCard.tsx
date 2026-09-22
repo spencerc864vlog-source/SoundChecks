@@ -3,9 +3,11 @@ import { StarDisplay } from "./StarRating";
 import { formatRelativeTime, formatShortDate, initials } from "@/lib/format";
 import { toggleLikeAction, addCommentAction } from "@/lib/actions/social";
 import CommentForm from "./CommentForm";
+import DeleteReviewButton from "./DeleteReviewButton";
 
 export type ReviewCardData = {
   id: string;
+  userId: string;
   rating: number;
   body: string;
   createdAt: Date | string;
@@ -40,6 +42,8 @@ export default function ReviewCard({
   currentUserId?: string;
   redirectPath: string;
 }) {
+  const isOwner = !!currentUserId && review.userId === currentUserId;
+
   return (
     <article className="card p-4 flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -62,7 +66,20 @@ export default function ReviewCard({
             <p className="text-xs text-[var(--muted)]">{formatRelativeTime(review.createdAt)}</p>
           </div>
         </div>
-        <StarDisplay rating={review.rating} size="sm" />
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <StarDisplay rating={review.rating} size="sm" />
+          {isOwner && review.concert && (
+            <div className="flex items-center gap-2.5">
+              <Link
+                href={`/concerts/${review.concert.id}/review`}
+                className="text-xs text-[var(--muted)] hover:text-[var(--accent)]"
+              >
+                Edit
+              </Link>
+              <DeleteReviewButton reviewId={review.id} redirectPath={redirectPath} />
+            </div>
+          )}
+        </div>
       </div>
 
       {review.body && <p className="text-sm leading-relaxed whitespace-pre-wrap">{review.body}</p>}

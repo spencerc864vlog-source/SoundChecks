@@ -23,6 +23,20 @@ Drizzle ORM, and cookie-based session auth (no third-party auth provider).
 - Venues are their own page: rate the venue itself (sound, sightlines,
   parking — separate from any specific show), see every show logged there,
   and see real upcoming shows via Ticketmaster
+- Artists are their own page too: an overall rating, every show of theirs
+  you've logged, their upcoming tour dates via Ticketmaster, and their
+  profile picture pulled from Spotify
+- See who follows you and who you follow, from your profile
+- "Friends who were there" on a concert page — which people you follow also
+  logged that same show, and what they rated it
+- Custom lists: group concerts into named, shareable collections (Letterboxd-
+  style), from any concert page or your own profile
+- "Want to go": flag an upcoming show (from a venue or artist page) to keep
+  track of what's next
+- A "year in review" page per user, per year: total shows, top artist, top
+  venue, and a month-by-month breakdown
+- Notifications (a bell in the nav) for new followers, likes, and comments on
+  your reviews
 
 ## Getting started locally
 
@@ -44,6 +58,23 @@ npm run dev
 > `concerts` table, and points existing concerts at it, then
 > `drizzle/0002_brown_sabretooth.sql` drops the old free-text columns. Just
 > run `npm run db:migrate` once — no manual data massaging needed.
+>
+> Upgrading from before artists/lists/want-to-go/notifications existed?
+> `drizzle/0003_small_queen_noir.sql` is purely additive (new tables, one new
+> nullable column) and backfills an `artists` row for every distinct artist
+> name already in your `concerts` table — nothing existing is touched or
+> dropped, and every statement in it is safe to re-run. `npm run db:migrate`
+> applies it. If your database's migration history ever gets out of sync
+> with drizzle-kit's tracking (this can happen if it was ever set up with
+> `db:push` instead of migrations), the same file can be pasted directly into
+> your database host's SQL editor (e.g. Neon's) and run by hand — every
+> statement uses `IF NOT EXISTS` / `ON CONFLICT` guards, so it's safe even if
+> some of it already applied.
+>
+> Upgrading from before artist photos existed? `drizzle/0004_absurd_aaron_stack.sql`
+> just adds two nullable columns to the `artists` table (`spotify_id`,
+> `image_url`) — nothing existing is touched, and it's safe to re-run or paste
+> into your database host's SQL editor the same way as above.
 
 Open http://localhost:3000. If you ran the seed script, log in with:
 
@@ -102,7 +133,70 @@ Free tier is 5,000 calls/day, 5/second — plenty for a project this size.
 Like the setlist.fm integration, I verified the request/response shapes
 against Ticketmaster's published docs but couldn't make a live call from
 this sandbox (network policy blocked it), so test a venue page for real once
-you've got a key in place.
+you've got a key in place. Artist pages use the same key and the same
+"upcoming shows" free tier — nothing extra to set up.
+
+### Setting up artist photos (Spotify)
+
+Artist pages and artist cards show a profile picture — the same photo
+Spotify uses on that artist's Spotify page — via the [Spotify Web
+API](https://developer.spotify.com/documentation/web-api). To turn it on:
+
+1. Log into (or create) a free account at https://developer.spotify.com/dashboard.
+2. Click "Create app" — you can put any name/description and any redirect
+   URI, we don't use the login side of Spotify's API, just its public
+   catalog data.
+3. Open the app's settings and copy the **Client ID** and **Client Secret**.
+4. Set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env`.
+
+The first time someone opens an artist's page, we search Spotify for an
+artist with a matching name and cache the match (`artists.spotify_id`,
+`artists.image_url`) so we don't re-search on every visit — same pattern as
+the Ticketmaster matching above. This means a newly-added artist won't have
+a photo on their card in the artist list until someone's actually opened
+their page at least once; there's no bulk backfill job. Matching is
+best-effort — an artist with an unusual or very common name may get no match
+(or occasionally the wrong one), or Spotify may simply not have a photo for
+them, in which case the artist just shows an initials tile instead, the same
+fallback used for user avatars elsewhere in the app. There's no manual
+re-link UI yet; if a match is ever wrong, the fix is to clear that artist's
+`spotify_id` and `image_url` columns directly (e.g. via `npm run db:studio`)
+so it gets re-matched next visit.
+
+This uses Spotify's Client Credentials flow (server-to-server access to
+public catalog data — no user ever logs into Spotify, and we never touch
+anyone's personal Spotify account or playlists). Rate limits are generous
+and pooled across an app rather than a hard daily number, plenty for a
+project this size. I verified the request/response shapes against Spotify's
+published docs but couldn't make a live call from this sandbox (network
+policy blocked it), so test an artist page for real once you've got keys in
+place.
+
+### Custom lists
+
+Anyone can start a list from a concert page ("+ New list", which adds that
+show as the first entry) or from their own profile's "Lists" tab. A list has
+a title, an optional description, and an ordered set of shows; the owner can
+remove items or delete the whole list. Lists are visible to anyone who has
+the link — there's no private/public toggle yet, and no drag-to-reorder;
+items stay in the order they were added.
+
+### Want to go
+
+On a venue or artist page, upcoming shows pulled from Ticketmaster get a
+"Want to go" button. Flagging one saves a snapshot of that event (name,
+date, venue) to `want_to_go`, visible on `/u/<username>/want-to-go` — it
+doesn't depend on Ticketmaster still listing the show later. Toggling it
+again removes the flag.
+
+### Notifications
+
+Following someone, liking a review, or commenting on one writes a row to
+`notifications` for the recipient (never for actions on your own stuff — no
+self-notifications). The bell in the nav shows an unread count and links to
+`/notifications`, which has a "mark all as read" action. There's no
+real-time push — the count updates on the next page load/navigation, not
+instantly while you're sitting on a page.
 
 ## Project structure
 
@@ -111,10 +205,16 @@ src/
   app/                    Routes (Next.js App Router)
     concerts/             Browse, add, view, and review concerts
     venues/                Browse/search venues; a venue's ratings + upcoming shows
+    artists/                Browse/search artists; an artist's ratings + upcoming shows
     u/[username]/         Public profile + edit profile / top four
-    login, signup/        Auth pages
-    api/upload/           Presigned upload URL endpoint
-    api/setlistfm/search/ Proxies a show search to setlist.fm (keeps the API key server-side)
+      followers, following/  Who follows this person / who they follow
+      lists/                 A user's lists, a single list, creating a new one
+      want-to-go/            A user's flagged upcoming shows
+      wrapped/               Year-in-review stats (redirects to the latest year)
+    notifications/          Follows/likes/comments, newest first
+    login, signup/          Auth pages
+    api/upload/              Presigned upload URL endpoint
+    api/setlistfm/search/   Proxies a show search to setlist.fm (keeps the API key server-side)
   components/             Shared UI (star rating, review card, nav, etc.)
   lib/
     db/                   Drizzle schema, client, and query helpers
@@ -122,7 +222,8 @@ src/
     auth.ts               Session cookie helpers (jose + bcryptjs)
     storage.ts             S3/R2 presigned upload helper
     setlistfm.ts           setlist.fm API client + response normalization
-    ticketmaster.ts         Ticketmaster Discovery API client (venue matching + upcoming shows)
+    ticketmaster.ts         Ticketmaster Discovery API client (venue/artist matching + upcoming shows)
+    spotify.ts               Spotify Web API client (artist matching + profile pictures)
 ```
 
 There's no separate backend/API layer beyond the one upload route — reads
@@ -180,6 +281,18 @@ simplifications worth knowing about if you keep building on it:
   "The Fillmore" vs "Fillmore") creates a second venue row instead of
   reusing the existing one. Fine for a v1; a real venue picker with
   autocomplete/fuzzy matching would be the next step.
-- **Ticketmaster venue matching** (for upcoming shows) is also name/city
-  based and best-effort, with the result cached on first lookup — see
-  "Setting up upcoming shows" above for how to force a re-match.
+- **Ticketmaster venue/artist matching** (for upcoming shows) is name/city
+  (or just name, for artists) based and best-effort, with the result cached
+  on first lookup — see "Setting up upcoming shows" above for how to force a
+  re-match.
+- **Artists are matched by exact name** (case-insensitive) when a concert is
+  logged, the same tradeoff as venues — a typo creates a second artist row
+  instead of reusing the existing one.
+- **Lists have no privacy toggle** — anyone with the link can view one — and
+  no manual reordering; items stay in the order they were added.
+- **Notifications aren't real-time** — the unread count refreshes on your
+  next page load, there's no live push/websocket.
+- **Artist photos (Spotify matching)** are name-based and best-effort, and
+  only looked up the first time someone opens that artist's page — see
+  "Setting up artist photos" above for how they get cached and how to force
+  a re-match.

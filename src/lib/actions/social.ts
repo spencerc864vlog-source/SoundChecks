@@ -47,6 +47,11 @@ export async function toggleFollowAction(formData: FormData) {
       followerId: user.id,
       followingId: targetUserId,
     });
+    await db.insert(schema.notifications).values({
+      userId: targetUserId,
+      actorId: user.id,
+      type: "follow",
+    });
   }
 
   safeRevalidate(redirectPath);
@@ -74,6 +79,16 @@ export async function toggleLikeAction(formData: FormData) {
       .where(and(eq(schema.likes.userId, user.id), eq(schema.likes.reviewId, reviewId)));
   } else {
     await db.insert(schema.likes).values({ userId: user.id, reviewId });
+
+    const review = await db.query.reviews.findFirst({ where: eq(schema.reviews.id, reviewId) });
+    if (review && review.userId !== user.id) {
+      await db.insert(schema.notifications).values({
+        userId: review.userId,
+        actorId: user.id,
+        type: "like",
+        reviewId,
+      });
+    }
   }
 
   safeRevalidate(redirectPath);
@@ -108,6 +123,18 @@ export async function addCommentAction(
     reviewId: parsed.data.reviewId,
     body: parsed.data.body,
   });
+
+  const review = await db.query.reviews.findFirst({
+    where: eq(schema.reviews.id, parsed.data.reviewId),
+  });
+  if (review && review.userId !== user.id) {
+    await db.insert(schema.notifications).values({
+      userId: review.userId,
+      actorId: user.id,
+      type: "comment",
+      reviewId: parsed.data.reviewId,
+    });
+  }
 
   safeRevalidate(formData.get("redirectPath"));
 }

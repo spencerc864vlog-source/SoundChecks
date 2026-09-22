@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getReviewsByUser, getTopFourForUser, getUserByUsername } from "@/lib/db/queries";
 import EditProfileForm from "./EditProfileForm";
 import TopFourForm from "./TopFourForm";
+import DeleteAccountForm from "./DeleteAccountForm";
 
 export default async function EditProfilePage({
   params,
@@ -45,6 +46,7 @@ export default async function EditProfilePage({
         avatarUrl={currentUser.avatarUrl}
       />
       <TopFourForm concerts={concertOptions} currentSlots={slots} />
+      <DeleteAccountForm />
     </div>
   );
 }

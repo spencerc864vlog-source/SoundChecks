@@ -81,19 +81,35 @@ export default async function ProfilePage({
               <strong>{reviews.length}</strong>{" "}
               <span className="text-[var(--muted)]">{reviews.length === 1 ? "show" : "shows"}</span>
             </span>
-            <span>
+            <Link href={`/u/${username}/followers`} className="hover:text-[var(--accent)]">
               <strong>{followCounts.followers}</strong>{" "}
               <span className="text-[var(--muted)]">followers</span>
-            </span>
-            <span>
+            </Link>
+            <Link href={`/u/${username}/following`} className="hover:text-[var(--accent)]">
               <strong>{followCounts.following}</strong>{" "}
               <span className="text-[var(--muted)]">following</span>
-            </span>
+            </Link>
             {ratingStats.avgRating !== null && (
               <span className="flex items-center gap-1.5">
                 <StarDisplay rating={Math.round(ratingStats.avgRating)} size="sm" />
                 <span className="text-[var(--muted)]">avg</span>
               </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4 mt-3 text-sm">
+            <Link href={`/u/${username}/lists`} className="text-[var(--accent)]">
+              Lists
+            </Link>
+            {reviews.length > 0 && (
+              <Link href={`/u/${username}/wrapped`} className="text-[var(--accent)]">
+                Year in review
+              </Link>
+            )}
+            {isOwnProfile && (
+              <Link href={`/u/${username}/want-to-go`} className="text-[var(--accent)]">
+                Want to go
+              </Link>
             )}
           </div>
         </div>

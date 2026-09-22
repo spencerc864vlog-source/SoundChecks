@@ -22,6 +22,20 @@
       "when": 1790027353763,
       "tag": "0002_brown_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790103355415,
+      "tag": "0003_small_queen_noir",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790106892586,
+      "tag": "0004_absurd_aaron_stack",
+      "breakpoints": true
     }
   ]
 }

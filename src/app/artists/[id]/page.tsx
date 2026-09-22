@@ -4,36 +4,38 @@ import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import {
-  getVenueById,
-  getVenueStats,
-  getRatingsForVenue,
-  getVenueRatingByUser,
-  getConcertsAtVenue,
+  getArtistById,
+  getArtistStats,
+  getRatingsForArtist,
+  getArtistRatingByUser,
+  getConcertsForArtist,
   getWantToGoIds,
 } from "@/lib/db/queries";
 import {
-  findMatchingVenue,
-  getUpcomingShowsForVenue,
+  findMatchingArtist,
+  getUpcomingShowsForArtist,
   TicketmasterNotConfiguredError,
   type UpcomingShow,
 } from "@/lib/ticketmaster";
+import { getOrFetchArtistImage } from "@/lib/artistImages";
 import { formatRating, formatShortDate, formatRelativeTime, initials } from "@/lib/format";
 import { StarDisplay } from "@/components/StarRating";
-import RateVenueForm from "@/components/RateVenueForm";
+import RateArtistForm from "@/components/RateArtistForm";
 import WantToGoButton from "@/components/WantToGoButton";
+import { ArtistAvatar } from "@/components/ArtistCard";
 
-async function loadUpcomingShows(venue: { id: string; name: string; city: string; ticketmasterId: string | null }) {
+async function loadUpcomingShows(artist: { id: string; name: string; ticketmasterId: string | null }) {
   try {
-    let ticketmasterId = venue.ticketmasterId;
+    let ticketmasterId = artist.ticketmasterId;
 
     if (!ticketmasterId) {
-      const match = await findMatchingVenue(venue.name, venue.city);
+      const match = await findMatchingArtist(artist.name);
       if (match) {
         ticketmasterId = match.ticketmasterId;
         await db
-          .update(schema.venues)
+          .update(schema.artists)
           .set({ ticketmasterId })
-          .where(eq(schema.venues.id, venue.id));
+          .where(eq(schema.artists.id, artist.id));
       }
     }
 
@@ -41,7 +43,7 @@ async function loadUpcomingShows(venue: { id: string; name: string; city: string
       return { shows: [] as UpcomingShow[], status: "no-match" as const };
     }
 
-    const shows = await getUpcomingShowsForVenue(ticketmasterId);
+    const shows = await getUpcomingShowsForArtist(ticketmasterId);
     return { shows, status: "ok" as const };
   } catch (error) {
     if (error instanceof TicketmasterNotConfiguredError) {
@@ -51,31 +53,29 @@ async function loadUpcomingShows(venue: { id: string; name: string; city: string
   }
 }
 
-export default async function VenuePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ArtistPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [venue, currentUser] = await Promise.all([getVenueById(id), getCurrentUser()]);
-  if (!venue) notFound();
+  const [artist, currentUser] = await Promise.all([getArtistById(id), getCurrentUser()]);
+  if (!artist) notFound();
 
-  const [stats, ratings, concerts, myRating, upcoming, wantToGoIds] = await Promise.all([
-    getVenueStats(id),
-    getRatingsForVenue(id),
-    getConcertsAtVenue(id),
-    currentUser ? getVenueRatingByUser(currentUser.id, id) : Promise.resolve(undefined),
-    loadUpcomingShows(venue),
+  const [stats, ratings, concerts, myRating, upcoming, wantToGoIds, imageUrl] = await Promise.all([
+    getArtistStats(id),
+    getRatingsForArtist(id),
+    getConcertsForArtist(id),
+    currentUser ? getArtistRatingByUser(currentUser.id, id) : Promise.resolve(undefined),
+    loadUpcomingShows(artist),
     currentUser ? getWantToGoIds(currentUser.id) : Promise.resolve(new Set<string>()),
+    getOrFetchArtistImage(artist),
   ]);
-  const redirectPath = `/venues/${id}`;
+  const redirectPath = `/artists/${id}`;
 
   return (
     <div className="flex flex-col gap-8">
       <div className="card p-6 flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">{venue.name}</h1>
-            <p className="text-sm text-[var(--muted)] mt-1">
-              {venue.address ? `${venue.address}, ` : ""}
-              {venue.city}, {venue.country}
-            </p>
+          <div className="flex items-center gap-4">
+            <ArtistAvatar name={artist.name} url={imageUrl} size={64} />
+            <h1 className="text-2xl font-bold">{artist.name}</h1>
           </div>
 
           <div className="flex flex-col items-start sm:items-end gap-2">
@@ -121,8 +121,8 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
 
           {upcoming.status === "no-match" && (
             <p className="text-sm text-[var(--muted)]">
-              We couldn&apos;t find this venue in Ticketmaster&apos;s listings, so we can&apos;t show
-              upcoming shows for it.
+              We couldn&apos;t find this artist in Ticketmaster&apos;s listings, so we can&apos;t show
+              upcoming shows for them.
             </p>
           )}
 
@@ -143,8 +143,9 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
                     <span className="font-medium text-sm leading-tight block truncate">
                       {show.name}
                     </span>
-                    <span className="text-xs text-[var(--muted)] block">
-                      {show.date ? formatShortDate(show.date) : "TBA"}
+                    <span className="text-xs text-[var(--muted)] block truncate">
+                      {[show.venueName, show.city].filter(Boolean).join(" · ") || "Venue TBA"} ·{" "}
+                      {show.date ? formatShortDate(show.date) : "date TBA"}
                     </span>
                   </a>
                   {currentUser && (
@@ -161,7 +162,7 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
 
           <h2 className="text-lg font-semibold mt-4">Logged on Soundcheck</h2>
           {concerts.length === 0 ? (
-            <p className="text-sm text-[var(--muted)]">No shows logged at this venue yet.</p>
+            <p className="text-sm text-[var(--muted)]">No shows logged for this artist yet.</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {concerts.map((concert) => (
@@ -170,7 +171,9 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
                     href={`/concerts/${concert.id}`}
                     className="card p-3 flex items-center justify-between gap-3 hover:border-[var(--accent)]"
                   >
-                    <span className="font-medium text-sm leading-tight truncate">{concert.artist}</span>
+                    <span className="font-medium text-sm leading-tight truncate">
+                      {concert.venue.name} · {concert.venue.city}
+                    </span>
                     <span className="text-xs text-[var(--muted)] shrink-0">
                       {formatShortDate(concert.date)}
                     </span>
@@ -183,8 +186,8 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
 
         <div className="flex flex-col gap-4">
           {currentUser ? (
-            <RateVenueForm
-              venueId={id}
+            <RateArtistForm
+              artistId={id}
               hasExistingRating={!!myRating}
               initialRating={myRating?.rating}
               initialBody={myRating?.body}
@@ -194,7 +197,7 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
               <Link href="/login" className="text-[var(--accent)]">
                 Log in
               </Link>{" "}
-              to rate this venue.
+              to rate this artist.
             </p>
           )}
 
@@ -204,7 +207,7 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
             </h2>
 
             {ratings.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">No one has rated this venue yet.</p>
+              <p className="text-sm text-[var(--muted)]">No one has rated this artist yet.</p>
             ) : (
               <div className="flex flex-col gap-3">
                 {ratings.map((r) => (

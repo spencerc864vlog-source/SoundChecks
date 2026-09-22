@@ -103,6 +103,10 @@ export type UpcomingShow = {
   name: string;
   date: string | null;
   url: string;
+  // Only populated on artist-keyed lookups, where the venue isn't implied by
+  // the query the way it is on a venue's own page.
+  venueName?: string | null;
+  city?: string | null;
 };
 
 type RawEvent = {
@@ -110,7 +114,20 @@ type RawEvent = {
   name: string;
   url: string;
   dates?: { start?: { localDate?: string } };
+  _embedded?: { venues?: { name?: string; city?: { name?: string } }[] };
 };
+
+function mapEvent(e: RawEvent): UpcomingShow {
+  const venue = e._embedded?.venues?.[0];
+  return {
+    id: e.id,
+    name: e.name,
+    date: e.dates?.start?.localDate ?? null,
+    url: e.url,
+    venueName: venue?.name ?? null,
+    city: venue?.city?.name ?? null,
+  };
+}
 
 export async function getUpcomingShowsForVenue(ticketmasterVenueId: string): Promise<UpcomingShow[]> {
   const data = await ticketmasterFetch("/events.json", {
@@ -120,10 +137,50 @@ export async function getUpcomingShowsForVenue(ticketmasterVenueId: string): Pro
   });
 
   const events: RawEvent[] = data?._embedded?.events ?? [];
-  return events.map((e) => ({
-    id: e.id,
-    name: e.name,
-    date: e.dates?.start?.localDate ?? null,
-    url: e.url,
-  }));
+  return events.map(mapEvent);
+}
+
+// ---------------------------------------------------------------------------
+// Artists (Ticketmaster calls performers "attractions")
+// ---------------------------------------------------------------------------
+
+export type TicketmasterArtistMatch = {
+  ticketmasterId: string;
+  name: string;
+};
+
+type RawAttraction = { id: string; name: string };
+
+/**
+ * Best-effort match for one of our artists against Ticketmaster's attraction
+ * database, so we know which attractionId to ask for upcoming tour dates.
+ * Returns null rather than guessing if nothing looks like a confident match.
+ */
+export async function findMatchingArtist(name: string): Promise<TicketmasterArtistMatch | null> {
+  const data = await ticketmasterFetch("/attractions.json", { keyword: name, size: 5 });
+  const attractions: RawAttraction[] = data?._embedded?.attractions ?? [];
+
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const target = normalize(name);
+
+  const match = attractions.find((a) => {
+    const n = normalize(a.name);
+    return n === target || n.includes(target) || target.includes(n);
+  });
+
+  if (!match) return null;
+  return { ticketmasterId: match.id, name: match.name };
+}
+
+export async function getUpcomingShowsForArtist(
+  ticketmasterAttractionId: string
+): Promise<UpcomingShow[]> {
+  const data = await ticketmasterFetch("/events.json", {
+    attractionId: ticketmasterAttractionId,
+    sort: "date,asc",
+    size: 12,
+  });
+
+  const events: RawEvent[] = data?._embedded?.events ?? [];
+  return events.map(mapEvent);
 }

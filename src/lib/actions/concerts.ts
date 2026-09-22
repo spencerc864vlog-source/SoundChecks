@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
-import { findOrCreateVenue } from "@/lib/db/queries";
+import { findOrCreateVenue, findOrCreateArtist } from "@/lib/db/queries";
 
 export type ActionState = { error?: string } | undefined;
 
@@ -41,12 +41,16 @@ export async function createConcertAction(
 
   const { artist, tourName, venue, city, country, date, posterUrl } = parsed.data;
 
-  const venueRow = await findOrCreateVenue({ name: venue, city, country });
+  const [venueRow, artistRow] = await Promise.all([
+    findOrCreateVenue({ name: venue, city, country }),
+    findOrCreateArtist(artist),
+  ]);
 
   const [concert] = await db
     .insert(schema.concerts)
     .values({
       artist,
+      artistId: artistRow.id,
       tourName: tourName || null,
       venueId: venueRow.id,
       date,
@@ -101,13 +105,17 @@ export async function importConcertAction(formData: FormData) {
     redirect(`/concerts/${existing.id}/review`);
   }
 
-  const venueRow = await findOrCreateVenue({ name: venue, city, country });
+  const [venueRow, artistRow] = await Promise.all([
+    findOrCreateVenue({ name: venue, city, country }),
+    findOrCreateArtist(artist),
+  ]);
 
   const [concert] = await db
     .insert(schema.concerts)
     .values({
       setlistfmId,
       artist,
+      artistId: artistRow.id,
       tourName: tourName || null,
       venueId: venueRow.id,
       date,
